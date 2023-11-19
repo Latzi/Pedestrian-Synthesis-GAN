@@ -10,12 +10,16 @@ from copy import deepcopy
 from . import networks
 from PIL import Image
 import torchvision.transforms as transforms
+from pg_modules.discriminator import ProjectedDiscriminator
+
+
 
 class Pix2PixModel(BaseModel):
     def name(self):
         return 'Pix2PixModel'
 
     def initialize(self, opt):
+
         BaseModel.initialize(self, opt)
         # self.opt = opt
         self.isTrain = opt.isTrain
@@ -30,17 +34,24 @@ class Pix2PixModel(BaseModel):
                                                (0.5, 0.5, 0.5))]
 
         self.transform = transforms.Compose(transform_list)
-                       
+        self.netD_person = ProjectedDiscriminator()
+
+        if torch.cuda.is_available():
+         self.netD_person.cuda()
+
+
         # load/define networks
         self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf,
                                       opt.which_model_netG, opt.norm, not opt.no_dropout, self.gpu_ids)
+        self.netG.cuda()
         if self.isTrain:
             use_sigmoid = opt.no_lsgan
             self.netD_image = networks.define_image_D(opt.input_nc + opt.output_nc, opt.ndf,
                                           opt.which_model_netD,
                                           opt.n_layers_D, opt.norm, use_sigmoid, self.gpu_ids)
             use_sigmoid = not opt.no_lsgan
-            self.netD_person = networks.define_person_D(opt.input_nc, opt.ndf, opt, use_sigmoid, self.gpu_ids)
+            #self.netD_person = networks.define_person_D(opt.input_nc, opt.ndf, opt, use_sigmoid, self.gpu_ids)
+            self.netD_image.cuda()
 
         if not self.isTrain or opt.continue_train:
             self.load_network(self.netG, 'G', opt.which_epoch)
@@ -74,6 +85,10 @@ class Pix2PixModel(BaseModel):
         print('-----------------------------------------------')
 
     def set_input(self, input):
+        if torch.cuda.is_available():
+         self.input_A = self.input_A.cuda()
+         self.input_B = self.input_B.cuda()
+
         AtoB = self.opt.which_direction == 'AtoB'
         input_A = input['A' if AtoB else 'B']
         input_B = input['B' if AtoB else 'A']
@@ -127,22 +142,48 @@ class Pix2PixModel(BaseModel):
         self.loss_D_image.backward()
 
     def backward_D_person(self):
+
+         # Set your batch size here
+        batch_size = 32  
+
+        # Assuming c_dim is 1000 or as per your discriminator's requirement
+        c_dim = 1000  
+        dummy_c = torch.zeros(batch_size, c_dim, device=self.person_crop_real.device)
+
+        #print("netD_person type:", type(self.netD_person))
+        # Compute loss using Projected GAN's netD_person
+        pred_person_real = self.netD_person(self.person_crop_real, dummy_c)
+        pred_person_fake = self.netD_person(self.person_crop_fake, dummy_c)
+
+        # Calculate real and fake losses
+        self.loss_D_person_real = self.criterionGAN_person(pred_person_real, True)
+        self.loss_D_person_fake = self.criterionGAN_person(pred_person_fake, False)
+
         #Fake
-        self.person_fake = self.netD_person.forward(self.person_crop_fake)
+        self.person_fake = self.netD_person(self.person_crop_fake, dummy_c)
+
+        #self.person_fake = self.netD_person.forward(self.person_crop_fake)
         # self.loss_D_person_fake = self.criterionGAN(self.person_fake, False)
-        self.loss_D_person_fake = self.criterionGAN_person(self.person_fake, False)
+        #self.loss_D_person_fake = self.criterionGAN_person(self.person_fake, False)
 
         #Real
-        self.person_real = self.netD_person.forward(self.person_crop_real)
+        self.person_real = self.netD_person.forward(self.person_crop_real, dummy_c)
         # self.loss_D_person_real = self.criterionGAN(self.person_real, True)
-        self.loss_D_person_real = self.criterionGAN_person(self.person_real, True)
+        #self.loss_D_person_real = self.criterionGAN_person(self.person_real, True)
 
         #Combine loss
         self.loss_D_person = (self.loss_D_person_fake + self.loss_D_person_real) * 0.5
         self.loss_D_person.backward()
 
 
+
     def backward_G(self):
+         # Set your batch size here
+        batch_size = 8 
+
+        # Assuming c_dim is 1000 or as per your discriminator's requirement
+        c_dim = 1000  
+        dummy_c = torch.zeros(batch_size, c_dim, device=self.person_crop_real.device)
         # First, G(A) should fake the discriminator1 and discriminator1
         # discriminator1
         fake_AB = torch.cat((self.real_A, self.fake_B), 1)
@@ -153,15 +194,15 @@ class Pix2PixModel(BaseModel):
         self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_A
         #self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B)
 
-        pred_fake_person = self.netD_person.forward(self.person_crop_fake)
+        pred_fake_person = self.netD_person.forward(self.person_crop_fake, dummy_c)
         # self.loss_G_GAN_person = self.criterionGAN(pred_fake_person, True)
         self.loss_G_GAN_person = self.criterionGAN_person(pred_fake_person, True)
 
         #self.loss_G_L1_person = self.criterionL1(self.person_crop_fake, self.person_crop_real)
 
-
-        self.loss_G = self.loss_G_GAN_image + self.loss_G_L1 + self.loss_G_GAN_person
-
+        #self.loss_G = self.loss_G_GAN_person +self.loss_G_GAN_image    
+        self.loss_G = self.loss_G_GAN_image + self.loss_G_L1 + 2 * self.loss_G_GAN_person
+        #self.loss_G = self.loss_G_GAN_image + self.loss_G_L1
         self.loss_G.backward()
 
 
@@ -185,15 +226,17 @@ class Pix2PixModel(BaseModel):
             self.backward_G()
             self.optimizer_G.step()
 
+        self.netD_person.feature_network.requires_grad_(False)
+
     def get_current_errors(self):
-        return OrderedDict([('G_GAN_image', self.loss_G_GAN_image.data[0]),
-                            ('G_GAN_person', self.loss_G_GAN_person.data[0]),
-                            ('G_L1', self.loss_G_L1.data[0]),
+        return OrderedDict([('G_GAN_image', self.loss_G_GAN_image.cpu().data),
+                            ('G_GAN_person', self.loss_G_GAN_person.cpu().data),
+                            ('G_L1', self.loss_G_L1.cpu().data),
                             #('G_L1_person', self.loss_G_L1_person.data[0]),
-                            ('D_image_real', self.loss_D_image_real.data[0]),
-                            ('D_image_fake', self.loss_D_image_fake.data[0]),
-                            ('D_person_real', self.loss_D_person_real.data[0]),
-                            ('D_person_fake', self.loss_D_person_fake.data[0])
+                            ('D_image_real', self.loss_D_image_real.cpu().data),
+                            ('D_image_fake', self.loss_D_image_fake.cpu().data),
+                            ('D_person_real', self.loss_D_person_real.cpu().data),
+                            ('D_person_fake', self.loss_D_person_fake.cpu().data)
                             ])
 
     def get_current_visuals(self):
