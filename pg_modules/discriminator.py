@@ -181,6 +181,10 @@ class ProjectedDiscriminator(torch.nn.Module):
             x = F.interpolate(x, 224, mode='bilinear', align_corners=False)
 
         features = self.feature_network(x)
+
+        #for key, feature in features.items():
+         #print(f"Feature at resolution {key}: shape {feature.shape}, type: {type(feature)}")
+
         logits = self.discriminator(features, c)
 
         return logits
