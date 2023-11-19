@@ -88,7 +88,7 @@ def define_person_D(input_nc, ndf, opt, use_sigmoid=False, gpu_ids=[]):
 
     if use_gpu:
         netD.cuda(
-            _id=gpu_ids[0])
+            device=gpu_ids[0])
     netD.apply(weights_init)
     return netD
 
@@ -448,8 +448,8 @@ class SPP_NET(nn.Module):
 
             h_wid = int(math.ceil(previous_conv_size[0] / out_pool_size[i]))
             w_wid = int(math.ceil(previous_conv_size[1] / out_pool_size[i]))
-            h_pad = (h_wid*out_pool_size[i] - previous_conv_size[0] + 1)/2
-            w_pad = (w_wid*out_pool_size[i] - previous_conv_size[1] + 1)/2
+            h_pad = min((h_wid * out_pool_size[i] - previous_conv_size[0] + 1) // 2, h_wid // 2)
+            w_pad = min((w_wid * out_pool_size[i] - previous_conv_size[1] + 1) // 2, w_wid // 2)
             maxpool = nn.MaxPool2d((h_wid, w_wid), stride=(h_wid, w_wid), padding=(h_pad, w_pad))
             x = maxpool(previous_conv)
             if(i == 0):
