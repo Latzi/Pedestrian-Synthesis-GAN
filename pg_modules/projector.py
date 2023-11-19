@@ -93,8 +93,8 @@ def _make_projector(im_res, cout, proj_type, expand=False):
 class F_RandomProj(nn.Module):
     def __init__(
         self,
-        im_res=256,
-        cout=64,
+        im_res=60,
+        cout=32,
         expand=True,
         proj_type=2,  # 0 = no projection, 1 = cross channel mixing, 2 = cross scale mixing
         **kwargs,
