@@ -11,6 +11,7 @@ from . import networks
 from PIL import Image
 import torchvision.transforms as transforms
 from pg_modules.discriminator import ProjectedDiscriminator
+import torch.nn.functional as F
 
 
 
@@ -156,8 +157,10 @@ class Pix2PixModel(BaseModel):
         pred_person_fake = self.netD_person(self.person_crop_fake, dummy_c)
 
         # Calculate real and fake losses
-        self.loss_D_person_real = self.criterionGAN_person(pred_person_real, True)
-        self.loss_D_person_fake = self.criterionGAN_person(pred_person_fake, False)
+        self.loss_D_person_fake = F.relu(1.0 + pred_person_fake).mean()
+        self.loss_D_person_real = F.relu(1.0 - pred_person_real).mean()
+        #self.loss_D_person_real = self.criterionGAN_person(pred_person_real, True)
+        #self.loss_D_person_fake = self.criterionGAN_person(pred_person_fake, False)
 
         #Fake
         self.person_fake = self.netD_person(self.person_crop_fake, dummy_c)
@@ -201,7 +204,7 @@ class Pix2PixModel(BaseModel):
         #self.loss_G_L1_person = self.criterionL1(self.person_crop_fake, self.person_crop_real)
 
         #self.loss_G = self.loss_G_GAN_person +self.loss_G_GAN_image    
-        self.loss_G = self.loss_G_GAN_image + self.loss_G_L1 + 2 * self.loss_G_GAN_person
+        self.loss_G = self.loss_G_GAN_image + self.loss_G_L1 + self.loss_G_GAN_person
         #self.loss_G = self.loss_G_GAN_image + self.loss_G_L1
         self.loss_G.backward()
 
