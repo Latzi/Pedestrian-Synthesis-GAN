@@ -144,7 +144,7 @@ class Pix2PixModel(BaseModel):
     def backward_D_person(self):
 
          # Set your batch size here
-        batch_size = 32  
+        batch_size = 8  
 
         # Assuming c_dim is 1000 or as per your discriminator's requirement
         c_dim = 1000  
