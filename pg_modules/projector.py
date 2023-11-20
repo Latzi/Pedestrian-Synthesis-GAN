@@ -29,13 +29,23 @@ def _make_scratch_csm(scratch, in_channels, cout, expand):
 
     return scratch
 
-
 def _make_efficientnet(model):
+    # Assuming model is an instance of EfficientNet
+
+    # Adjust the first convolutional layer (conv_stem) to accommodate smaller images
+    # You might need to fine-tune these parameters (kernel_size, stride, padding)
+    model.conv_stem = nn.Conv2d(model.conv_stem.in_channels, model.conv_stem.out_channels, 
+                                kernel_size=(3, 3), stride=(1, 1), padding=(1, 1))
+
+    # Define EfficientNet layers with appropriate blocks
+    # No changes in blocks, assuming they can handle the output of the modified conv_stem
     pretrained = nn.Module()
-    pretrained.layer0 = nn.Sequential(model.conv_stem, model.bn1, model.act1, *model.blocks[0:2])
+    pretrained.layer0 = nn.Sequential(
+        model.conv_stem, model.bn1, model.act1, *model.blocks[0:2])
     pretrained.layer1 = nn.Sequential(*model.blocks[2:3])
     pretrained.layer2 = nn.Sequential(*model.blocks[3:5])
     pretrained.layer3 = nn.Sequential(*model.blocks[5:9])
+
     return pretrained
 
 
