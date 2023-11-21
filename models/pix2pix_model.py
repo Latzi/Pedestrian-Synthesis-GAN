@@ -145,7 +145,7 @@ class Pix2PixModel(BaseModel):
     def backward_D_person(self):
 
          # Set your batch size here
-        batch_size = 8  
+        batch_size = 1
 
         # Assuming c_dim is 1000 or as per your discriminator's requirement
         c_dim = 1000  
@@ -157,8 +157,8 @@ class Pix2PixModel(BaseModel):
         pred_person_fake = self.netD_person(self.person_crop_fake, dummy_c)
 
         # Calculate real and fake losses
-        self.loss_D_person_fake = F.relu(1.0 + pred_person_fake).mean()
-        self.loss_D_person_real = F.relu(1.0 - pred_person_real).mean()
+        self.loss_D_person_fake = F.relu(0.05 + pred_person_fake).mean()
+        self.loss_D_person_real = F.relu(0.05 - pred_person_real).mean()
         #self.loss_D_person_real = self.criterionGAN_person(pred_person_real, True)
         #self.loss_D_person_fake = self.criterionGAN_person(pred_person_fake, False)
 
@@ -182,7 +182,7 @@ class Pix2PixModel(BaseModel):
 
     def backward_G(self):
          # Set your batch size here
-        batch_size = 8 
+        batch_size = 1 
 
         # Assuming c_dim is 1000 or as per your discriminator's requirement
         c_dim = 1000  
@@ -199,7 +199,7 @@ class Pix2PixModel(BaseModel):
 
         pred_fake_person = self.netD_person.forward(self.person_crop_fake, dummy_c)
         # self.loss_G_GAN_person = self.criterionGAN(pred_fake_person, True)
-        self.loss_G_GAN_person = self.criterionGAN_person(pred_fake_person, True)
+        self.loss_G_GAN_person = self.criterionGAN_person(pred_fake_person, True) * self.opt.lambda_C
 
         #self.loss_G_L1_person = self.criterionL1(self.person_crop_fake, self.person_crop_real)
 
@@ -267,7 +267,11 @@ class Pix2PixModel(BaseModel):
             param_group['lr'] = lr
         for param_group in self.optimizer_D_person.param_groups:
             param_group['lr'] = lr
+                # Set the fixed learning rate for optimizer_G
+        fixed_lr = 0.0008
         for param_group in self.optimizer_G.param_groups:
-            param_group['lr'] = lr
+            param_group['lr'] = fixed_lr
+        #for param_group in self.optimizer_G.param_groups:
+            #param_group['lr'] = lr
         print('update learning rate: %f -> %f' % (self.old_lr, lr))
         self.old_lr = lr
