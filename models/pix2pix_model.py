@@ -157,8 +157,8 @@ class Pix2PixModel(BaseModel):
         pred_person_fake = self.netD_person(self.person_crop_fake, dummy_c)
 
         # Calculate real and fake losses
-        self.loss_D_person_fake = F.relu(0.05 + pred_person_fake).mean()
-        self.loss_D_person_real = F.relu(0.05 - pred_person_real).mean()
+        self.loss_D_person_fake = F.relu(0.5 + pred_person_fake).mean()
+        self.loss_D_person_real = F.relu(0.5 - pred_person_real).mean()
         #self.loss_D_person_real = self.criterionGAN_person(pred_person_real, True)
         #self.loss_D_person_fake = self.criterionGAN_person(pred_person_fake, False)
 
@@ -268,7 +268,7 @@ class Pix2PixModel(BaseModel):
         for param_group in self.optimizer_D_person.param_groups:
             param_group['lr'] = lr
                 # Set the fixed learning rate for optimizer_G
-        fixed_lr = 0.0008
+        fixed_lr = 0.0002
         for param_group in self.optimizer_G.param_groups:
             param_group['lr'] = fixed_lr
         #for param_group in self.optimizer_G.param_groups:
