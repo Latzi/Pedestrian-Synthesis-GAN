@@ -111,13 +111,23 @@ class Pix2PixModel(BaseModel):
 
     # no backprop gradients
     def test(self):
-        self.real_A = Variable(self.input_A, volatile=True)
-        self.fake_B = self.netG.forward(self.real_A)
-        self.real_B = Variable(self.input_B, volatile=True)
+        super(Pix2PixModel, self).eval()
 
-        y,x,w,h = self.bbox
-        self.person_crop_real = self.real_B[:,:,y[0]:h[0],x[0]:w[0]]
-        self.person_crop_fake = self.fake_B[:,:,y[0]:h[0],x[0]:w[0]]
+        with torch.no_grad():
+            self.real_A = Variable(self.input_A)
+            self.fake_B = self.netG.forward(self.real_A)
+            self.real_B = Variable(self.input_B)
+
+            y, x, w, h = self.bbox
+            self.person_crop_real = self.real_B[:,:,y[0]:h[0],x[0]:w[0]]
+            self.person_crop_fake = self.fake_B[:,:,y[0]:h[0],x[0]:w[0]]
+        #self.real_A = Variable(self.input_A, volatile=True)
+        #self.fake_B = self.netG.forward(self.real_A)
+        #self.real_B = Variable(self.input_B, volatile=True)
+
+        #y,x,w,h = self.bbox
+        #self.person_crop_real = self.real_B[:,:,y[0]:h[0],x[0]:w[0]]
+        #self.person_crop_fake = self.fake_B[:,:,y[0]:h[0],x[0]:w[0]]
 
     # get image paths
     def get_image_paths(self):
