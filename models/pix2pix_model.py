@@ -142,6 +142,14 @@ class Pix2PixModel(BaseModel):
 
         self.loss_D_image.backward()
 
+    def crop_consistency_loss(self, real, fake, bbox):
+    #"""
+    #Calculate the L1 loss between the cropped regions of the real and fake images.
+     y, x, h, w = bbox
+     real_crop = real[:, :, y:y+h, x:x+w]
+     fake_crop = fake[:, :, y:y+h, x:x+w]
+     return torch.nn.functional.l1_loss(real_crop, fake_crop)
+
     def backward_D_person(self):
 
          # Set your batch size here
@@ -157,8 +165,8 @@ class Pix2PixModel(BaseModel):
         pred_person_fake = self.netD_person(self.person_crop_fake, dummy_c)
 
         # Calculate real and fake losses
-        self.loss_D_person_fake = F.relu(0.5 + pred_person_fake).mean()
-        self.loss_D_person_real = F.relu(0.5 - pred_person_real).mean()
+        self.loss_D_person_fake = F.relu(0.2 + pred_person_fake).mean()
+        self.loss_D_person_real = F.relu(0.2 - pred_person_real).mean()
         #self.loss_D_person_real = self.criterionGAN_person(pred_person_real, True)
         #self.loss_D_person_fake = self.criterionGAN_person(pred_person_fake, False)
 
@@ -184,6 +192,10 @@ class Pix2PixModel(BaseModel):
          # Set your batch size here
         batch_size = 1 
 
+        # Calculate Crop Consistency Loss
+        y, x, w, h = self.bbox
+        self.loss_G_Crop_Consistency = self.crop_consistency_loss(self.real_B, self.fake_B, (y[0], x[0], h[0], w[0]))
+
         # Assuming c_dim is 1000 or as per your discriminator's requirement
         c_dim = 1000  
         dummy_c = torch.zeros(batch_size, c_dim, device=self.person_crop_real.device)
@@ -203,12 +215,18 @@ class Pix2PixModel(BaseModel):
 
         #self.loss_G_L1_person = self.criterionL1(self.person_crop_fake, self.person_crop_real)
 
-        #self.loss_G = self.loss_G_GAN_person +self.loss_G_GAN_image    
-        self.loss_G = self.loss_G_GAN_image + self.loss_G_L1 + self.loss_G_GAN_person
+        #self.loss_G = self.loss_G_GAN_person +self.loss_G_GAN_image  
+        # Combine with existing losses
+        lambda_crop = 100  # weight for crop consistency loss, can be tuned    
+        self.loss_G = self.loss_G_GAN_image + self.loss_G_L1 + self.loss_G_GAN_person + lambda_crop * self.loss_G_Crop_Consistency
         #self.loss_G = self.loss_G_GAN_image + self.loss_G_L1
         self.loss_G.backward()
 
-
+    def get_current_errors(self):
+        return OrderedDict([
+        # ... existing errors ...
+        ('G_Crop_Consistency', self.loss_G_Crop_Consistency.cpu().data)
+        ])
 
 
     def optimize_parameters(self, only_d):
@@ -239,7 +257,8 @@ class Pix2PixModel(BaseModel):
                             ('D_image_real', self.loss_D_image_real.cpu().data),
                             ('D_image_fake', self.loss_D_image_fake.cpu().data),
                             ('D_person_real', self.loss_D_person_real.cpu().data),
-                            ('D_person_fake', self.loss_D_person_fake.cpu().data)
+                            ('D_person_fake', self.loss_D_person_fake.cpu().data),
+                            ('G_Crop_Consistency', self.loss_G_Crop_Consistency.cpu().data.numpy())  
                             ])
 
     def get_current_visuals(self):
