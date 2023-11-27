@@ -1,1 +1,65 @@
-new_folder/.gitkeep 
+import time
+import os
+from options.test_options import TestOptions
+from data.data_loader import CreateDataLoader
+from models.models import create_model
+from util.visualizer import Visualizer
+from pdb import set_trace as st
+from util import html
+import matplotlib.pyplot as plt  # Import matplotlib for plotting
+
+try:
+    import wandb
+except ImportError:
+    print('Warning: wandb package cannot be found. The option "--use_wandb" will result in error.')
+
+opt = TestOptions().parse()
+opt.nThreads = 1   # test code only supports nThreads = 1
+opt.batchSize = 1  # test code only supports batchSize = 1
+opt.serial_batches = True  # no shuffle
+opt.no_flip = True  # no flip
+
+data_loader = CreateDataLoader(opt)
+dataset = data_loader.load_data()
+model = create_model(opt)
+visualizer = Visualizer(opt)
+# create website
+web_dir = os.path.join(opt.results_dir, opt.name, '%s_%s' % (opt.phase, opt.which_epoch))
+webpage = html.HTML(web_dir, 'Experiment = %s, Phase = %s, Epoch = %s' % (opt.name, opt.phase, opt.which_epoch))
+# test
+
+# Create a directory for saving input images
+input_images_dir = os.path.join(web_dir, "input_images")
+if not os.path.exists(input_images_dir):
+    os.makedirs(input_images_dir)
+
+for i, data in enumerate(dataset):
+    model.eval()
+    print("Model is in evaluation mode:", not model.training)
+#    if i >= opt.how_many:
+#        break
+    model.set_input(data)
+    model.test()
+    visuals = model.get_current_visuals()
+    img_path = model.get_image_paths()
+
+    if 'real_A' in visuals:  # Check if the input image key exists
+        input_image_np = visuals['real_A']  # Assuming 'real_A' is the key for the input image
+        if input_image_np.ndim == 4:  # If it's a batch, take the first image
+            input_image_np = input_image_np[0]
+        # Print the size of the input image
+        print(f"Input image size: {input_image_np.shape}")
+        # Assuming the image is already in the range [0, 1]
+        if input_image_np.shape[0] == 3:  # If it's a 3-channel image, transpose from CHW to HWC format
+            input_image_np = np.transpose(input_image_np, (1, 2, 0))
+
+        plt.imshow(input_image_np)
+        plt.title(f"Input Image: {img_path[0]}")
+        image_filename = os.path.basename(img_path[0])
+        plt.savefig(os.path.join(input_images_dir, image_filename))  # Save the figure
+        plt.close()
+
+    print('process image... %s' % img_path)
+    visualizer.save_images(webpage, visuals, img_path)
+
+webpage.save()
