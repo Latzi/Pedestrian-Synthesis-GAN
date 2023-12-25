@@ -330,7 +330,7 @@ class Pix2PixModel(BaseModel):
                 # Process for GAN and L1 losses
                 fake_AB = torch.cat((self.real_A[i:i+1], self.fake_B[i:i+1]), 1)
                 pred_fake_image = self.netD_image.forward(fake_AB)
-                self.loss_G_GAN_image += self.criterionGAN_image(pred_fake_image, True)
+                self.loss_G_GAN_image = self.criterionGAN_image(pred_fake_image, True)
 
                 self.loss_G_L1 = self.criterionL1(self.fake_B[i:i+1], self.real_B[i:i+1]) * self.opt.lambda_A
 
