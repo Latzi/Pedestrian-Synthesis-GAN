@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import os
+import random
 from collections import OrderedDict
 from torch.autograd import Variable
 import util.util as util
@@ -127,6 +128,14 @@ class Pix2PixModel(BaseModel):
          self.fake_B = self.netG.forward(self.real_A)
          self.real_B = Variable(self.input_B)
 
+         # Add Gaussian noise to real and fake images
+         noise_std = 0.1  # Standard deviation of the Gaussian noise
+         noise_real = torch.randn_like(self.real_B) * noise_std
+         noise_fake = torch.randn_like(self.fake_B) * noise_std
+
+         self.real_B_noisy = self.real_B + noise_real
+         self.fake_B_noisy = self.fake_B + noise_fake
+
          _, _, height, width = self.real_B.size()
 
          batch_size, channels, _, _ = self.real_B.size()
@@ -148,9 +157,24 @@ class Pix2PixModel(BaseModel):
                  cropped_real = self.real_B[i, :, y:y + bbox_height, x:x + bbox_width]
                  cropped_fake = self.fake_B[i, :, y:y + bbox_height, x:x + bbox_width]
 
+                 # Print original and cropped sizes
+                 #print(f"Original image size: {height}x{width}")
+                 #print(f"Cropped image size: {bbox_height}x{bbox_width}") 
+                 # Resize and pad the cropped images
+                 target_size = 256
+                 cropped_real_resized_padded = self.resize_and_pad(cropped_real.unsqueeze(0), target_size)
+                 cropped_fake_resized_padded = self.resize_and_pad(cropped_fake.unsqueeze(0), target_size)
+
+                 # Assign the resized and padded images to person_crop_real and person_crop_fake
+                 self.person_crop_real[i] = cropped_real_resized_padded.squeeze(0)
+                 self.person_crop_fake[i] = cropped_fake_resized_padded.squeeze(0)
                  # Assign the cropped images to person_crop_real and person_crop_fake
-                 self.person_crop_real[i, :, :bbox_height, :bbox_width] = cropped_real
-                 self.person_crop_fake[i, :, :bbox_height, :bbox_width] = cropped_fake
+                 #self.person_crop_real[i, :, :bbox_height, :bbox_width] = cropped_real
+                 #self.person_crop_fake[i, :, :bbox_height, :bbox_width] = cropped_fake
+                 #=========================== PRINTS =============================
+                 #print(f"Cropped Fake Tensor size: {cropped_fake.size()}")
+                 #print(f"Person Crop Real Tensor size: {self.person_crop_real[i].size()}")
+                 #print(f"Person Crop Fake Tensor size: {self.person_crop_fake[i].size()}")
              else:
                  print(f"Warning - Incorrect bbox format for image index {i}: {self.bbox[i]}")
 
@@ -225,23 +249,35 @@ class Pix2PixModel(BaseModel):
         return self.image_paths
 
     def backward_D_image(self):
+        # Define noise level
+        noise_std = 0.05  # Adjust this value as needed
+
         # Fake
-        # stop backprop to the generator by detaching fake_B
+        # Stop backprop to the generator by detaching fake_B
         fake_AB = self.fake_AB_pool.query(torch.cat((self.real_A, self.fake_B), 1))
-        self.pred_fake = self.netD_image.forward(fake_AB.detach())
-        # self.loss_D_image_fake = self.criterionGAN(self.pred_fake, False)
+        # Add Gaussian noise to the fake images
+        noise_fake = torch.randn_like(fake_AB) * noise_std
+        fake_AB_noisy = fake_AB + noise_fake
+        self.pred_fake = self.netD_image.forward(fake_AB_noisy.detach())
         self.loss_D_image_fake = self.criterionGAN_image(self.pred_fake, False)
 
         # Real
         real_AB = torch.cat((self.real_A, self.real_B), 1)
-        self.pred_real = self.netD_image.forward(real_AB)
-        # self.loss_D_image_real = self.criterionGAN(self.pred_real, True)
+        # Add Gaussian noise to the real images
+        noise_real = torch.randn_like(real_AB) * noise_std
+        real_AB_noisy = real_AB + noise_real
+        self.pred_real = self.netD_image.forward(real_AB_noisy)
         self.loss_D_image_real = self.criterionGAN_image(self.pred_real, True)
+
+        # Swap labels with some probability
+        swap_prob = 0.1  # Probability of swapping labels
+        if torch.rand(1).item() < swap_prob:
+           self.loss_D_image_fake, self.loss_D_image_real = self.loss_D_image_real, self.loss_D_image_fake
 
         # Combined loss
         self.loss_D_image = (self.loss_D_image_fake + self.loss_D_image_real) * 0.5
-
         self.loss_D_image.backward()
+
 
     def crop_consistency_loss(self, real, fake, bbox):
     #"""
@@ -251,39 +287,44 @@ class Pix2PixModel(BaseModel):
      fake_crop = fake[:, :, y:y+h, x:x+w]
      return torch.nn.functional.l1_loss(real_crop, fake_crop)
 
+
     def resize_and_pad(self, image, target_size):
-        _, _, h, w = image.size()
-        # Determine the scaling factor and resize the image
-        scale_factor = target_size / max(h, w)
-        new_h, new_w = int(h * scale_factor), int(w * scale_factor)
-        image = F.interpolate(image, size=(new_h, new_w), mode='bilinear', align_corners=False)
+         _, _, h, w = image.size()
+         #print(f"Original crop size: {h}x{w}")
+         # Calculate the scaling factor to prevent the image from exceeding the target size
+         scale_factor = min(target_size / h, target_size / w)
+         new_h, new_w = int(h * scale_factor), int(w * scale_factor)
+         resized_image = F.interpolate(image, size=(new_h, new_w), mode='bilinear', align_corners=False)
 
-        # Calculate padding to make the image square
-        padding_top = (target_size - new_h) // 2
-        padding_bottom = target_size - new_h - padding_top
-        padding_left = (target_size - new_w) // 2
-        padding_right = target_size - new_w - padding_left
+         # Calculate the padding to reach the target size
+         padding_top = (target_size - new_h) // 2
+         padding_left = (target_size - new_w) // 2
+         padding_bottom = target_size - new_h - padding_top
+         padding_right = target_size - new_w - padding_left
 
-        # Apply padding
-        #print("After resizing: ", image.size())
-        image_padded = F.pad(image, (padding_left, padding_right, padding_top, padding_bottom), mode='constant', value=0)
-        #print("After padding: ", image_padded.size())
-        return image_padded 
+         # Apply padding with black pixels (value=0)
+         padded_image = F.pad(resized_image, (padding_left, padding_right, padding_top, padding_bottom), 'constant', -1)
+         # Debugging output
+         #print(f"Resized image size: {new_h}x{new_w}")
+         #print(f"Padding top: {padding_top}, left: {padding_left}, bottom: {padding_bottom}, right: {padding_right}")
+         #print(f"Padded image size: {padded_image.size()}")
+         return padded_image
+
 
     def backward_D_person(self):
         batch_size = 1
         c_dim = 1000
         dummy_c = torch.zeros(batch_size, c_dim, device=self.person_crop_real.device)
-        #print("Size of person_crop_real:", self.person_crop_real.size())
-        #print("Size of person_crop_fake:", self.person_crop_fake.size())
+        #print("*********Size of person_crop_real:*********", self.person_crop_real.size())
+        #print("*********Size of person_crop_fake:*********", self.person_crop_fake.size())
         # Resize and pad crops to 224x224 (or your target size)
-        target_size = 224
+        target_size = 256
         self.person_crop_real = self.resize_and_pad(self.person_crop_real, target_size)
         self.person_crop_fake = self.resize_and_pad(self.person_crop_fake, target_size)
 
         # Now print the sizes after resizing and padding
-        #print("Size of person_crop_real after resize and pad:", self.person_crop_real.size())
-        #print("Size of person_crop_fake after resize and pad:", self.person_crop_fake.size())
+        #print("----------Size of person_crop_real after resize and pad:-----------", self.person_crop_real.size())
+        #print("----------Size of person_crop_fake after resize and pad:-----------", self.person_crop_fake.size())
         # Save the image pairs as they are presented to the person discriminator
         """os.makedirs('croppedimagesD', exist_ok=True)
         for i in range(min(5, self.person_crop_real.size(0))):
@@ -305,7 +346,6 @@ class Pix2PixModel(BaseModel):
         # Combine loss
         self.loss_D_person = (self.loss_D_person_fake + self.loss_D_person_real) * 0.5
         self.loss_D_person.backward()
-
 
 
     def backward_G(self):
