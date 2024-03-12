@@ -365,7 +365,7 @@ class Pix2PixModel(BaseModel):
                 y, x, w, h = self.bbox[i]
 
                 # Calculate Crop Consistency Loss for each image
-                self.loss_G_Crop_Consistency += self.crop_consistency_loss(self.real_B[i:i+1], self.fake_B[i:i+1], (y, x, h, w))
+                self.loss_G_Crop_Consistency = self.crop_consistency_loss(self.real_B[i:i+1], self.fake_B[i:i+1], (y, x, h, w))
 
                 # Process for GAN and L1 losses
                 fake_AB = torch.cat((self.real_A[i:i+1], self.fake_B[i:i+1]), 1)
